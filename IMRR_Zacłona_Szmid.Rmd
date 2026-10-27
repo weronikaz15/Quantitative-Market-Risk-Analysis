@@ -864,3 +864,523 @@ knitr::kable(
 
 Historyczny jednodniowy VaR przy poziomie ufności 95% wyniósł 4,145% dla CI Games oraz 3,423% dla CD Projekt. Przy wyższym poziomie ufności, wynoszącym 99%, wartości wzrosły odpowiednio do 8,582% i 6,065%. Oznacza to, że w analizowanym okresie CI Games charakteryzowało się większym ryzykiem wystąpienia znacznych jednodniowych strat. Wzrost VaR wraz z poziomem ufności wskazuje na możliwość występowania strat wyraźnie większych niż te obserwowane przy standardowym progu 95%.
 
+
+
+## 6.2. Jednodniowy VaR – metoda parametryczna
+
+W celu porównania metod szacowania ryzyka wyznaczono jednodniowy VaR metodą parametryczną, przy założeniu normalnego rozkładu dziennych prostych stóp zwrotu.
+
+VaR obliczono na podstawie średniej stopy zwrotu, odchylenia standardowego i odpowiedniego kwantyla standardowego rozkładu normalnego:
+
+$$
+VaR_c=-\left(\bar{R}+z_{1-c}s\right)
+$$
+
+gdzie $\bar{R}$ oznacza średnią dzienną stopę zwrotu, $s$ – odchylenie standardowe, a $z_{1-c}$ – kwantyl standardowego rozkładu normalnego odpowiadający prawdopodobieństwu $1-c$.
+
+Obliczenia przeprowadzono dla poziomów ufności 95% i 99%, zachowując jednodniowy horyzont inwestycyjny.
+
+
+```{r var-parametryczny, echo=FALSE}
+poziomy <- c(0.95, 0.99)
+
+licz_VaR_param <- function(x, poziom) {
+  srednia <- mean(x)
+  odchylenie <- sd(x)
+
+  -(srednia + qnorm(1 - poziom) * odchylenie) * 100
+}
+
+wyniki_VaR_param <- expand.grid(
+  Spolka = colnames(stopy_zwrotu),
+  Poziom = poziomy,
+  stringsAsFactors = FALSE
+)
+
+wyniki_VaR_param$VaR <- mapply(
+  function(spolka, poziom) {
+    licz_VaR_param(
+      as.numeric(stopy_zwrotu[, spolka]),
+      poziom
+    )
+  },
+  wyniki_VaR_param$Spolka,
+  wyniki_VaR_param$Poziom
+)
+
+
+stopifnot(all(is.finite(wyniki_VaR_param$VaR)))
+
+wyniki_VaR_param$Poziom <- paste0(
+  wyniki_VaR_param$Poziom * 100, "%"
+)
+
+wyniki_VaR_param$VaR <- round(
+  wyniki_VaR_param$VaR, 3
+)
+
+
+knitr::kable(
+  wyniki_VaR_param,
+  col.names = c(
+    "Spółka",
+    "Poziom ufności",
+    "Jednodniowy VaR (%)"
+  ),
+  row.names = FALSE,
+  caption = "Parametryczny jednodniowy Value at Risk"
+)
+```
+
+Parametryczny jednodniowy VaR dla CI Games wyniósł 5,578% przy poziomie ufności 95% oraz 7,913% przy poziomie 99%. W przypadku CD Projekt wartości te wyniosły odpowiednio 3,711% i 5,290%. Wyniki potwierdzają wyższe ryzyko jednodniowych strat dla CI Games. Porównanie z metodą historyczną wskazuje, że przy poziomie ufności 95% metoda parametryczna daje wyższe oszacowania VaR dla obu spółek, natomiast przy poziomie 99%  niższe. Sugeruje to, że założenie normalności rozkładu może nie odzwierciedlać w pełni ryzyka skrajnych strat.
+
+
+## 6.3. Porównanie metod szacowania VaR
+
+
+```{r porownanie-var, echo=FALSE, fig.width=9, fig.height=5.5, warning=FALSE, message=FALSE}
+# Polaczenie wynikow obu metod
+var_hist <- wyniki_VaR
+var_hist$Metoda <- "Historyczna"
+
+var_param <- wyniki_VaR_param
+var_param$Metoda <- "Parametryczna"
+
+dane_var <- rbind(var_hist, var_param)
+
+# Kolejnosc poziomow ufnosci
+dane_var$Poziom <- factor(
+  dane_var$Poziom,
+  levels = c("95%", "99%")
+)
+
+# Kolejnosc metod
+dane_var$Metoda <- factor(
+  dane_var$Metoda,
+  levels = c("Historyczna", "Parametryczna")
+)
+
+ggplot(
+  dane_var,
+  aes(x = Poziom, y = VaR, fill = Metoda)
+) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6
+  ) +
+  geom_text(
+    aes(label = sprintf("%.2f%%", VaR)),
+    position = position_dodge(width = 0.7),
+    vjust = -0.4,
+    size = 3.5
+  ) +
+  facet_wrap(~Spolka, nrow = 1) +
+  scale_fill_manual(
+    values = c(
+      "Historyczna" = "#0072B2",
+      "Parametryczna" = "#D55E00"
+    )
+  ) +
+  scale_y_continuous(
+    labels = function(x) paste0(x, "%"),
+    expand = expansion(mult = c(0, 0.13))
+  ) +
+  labs(
+    title = "Porównanie metod szacowania VaR",
+    subtitle = "Jednodniowy VaR przy poziomach ufności 95% i 99%",
+    x = "Poziom ufności",
+    y = "Value at Risk (%)",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    strip.text = element_text(face = "bold"),
+    legend.position = "top",
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+## 6.4. Value at Risk dla horyzontu 10 sesji giełdowych
+
+W celu oceny wpływu horyzontu inwestycyjnego na poziom ryzyka wyznaczono VaR dla okresu 10 sesji giełdowych, przy poziomach ufności 95% i 99%.
+
+W metodzie historycznej wykorzystano 10-sesyjne proste stopy zwrotu, obliczone jako:
+
+$$
+R_t^{(10)}=\frac{P_t}{P_{t-10}}-1
+$$
+
+W metodzie parametrycznej zastosowano skalowanie średniej stopy zwrotu i odchylenia standardowego przy założeniu niezależnych dziennych stóp zwrotu o stałych parametrach:
+
+$$
+VaR_{c,10}=-\left(10\bar R+z_{1-c}s\sqrt{10}\right)
+$$
+
+Podejście parametryczne stanowi przybliżenie oparte na normalnym rozkładzie dziennych prostych stóp zwrotu i addytywnym modelu stopy zwrotu w czasie. Obie metody pozwalają porównać ryzyko inwestycji utrzymywanej przez 10 sesji.
+
+
+```{r var-10-sesji, echo=FALSE}
+
+h <- 10
+poziomy <- c(0.95, 0.99)
+
+ceny_opoznione <- xts::lag.xts(
+  ceny,
+  k = h,
+  na.pad = TRUE
+)
+
+stopy_10 <- na.omit(
+  ceny / ceny_opoznione - 1
+)
+
+stopifnot(
+  nrow(stopy_10) == nrow(ceny) - h,
+  all(is.finite(as.matrix(stopy_10)))
+)
+
+var_hist_10 <- function(x, poziom) {
+  -as.numeric(
+    quantile(x, probs = 1 - poziom, type = 7)
+  ) * 100
+}
+
+var_param_10 <- function(x, poziom, h) {
+  mu <- mean(x)
+  sigma <- sd(x)
+
+  -(h * mu + qnorm(1 - poziom) * sigma * sqrt(h)) * 100
+}
+
+wyniki_var_10 <- expand.grid(
+  Spolka = colnames(stopy_zwrotu),
+  Poziom = poziomy,
+  Metoda = c("Historyczna", "Parametryczna"),
+  stringsAsFactors = FALSE
+)
+
+wyniki_var_10$VaR <- mapply(
+  function(spolka, poziom, metoda) {
+    if (metoda == "Historyczna") {
+      var_hist_10(
+        as.numeric(stopy_10[, spolka]),
+        poziom
+      )
+    } else {
+      var_param_10(
+        as.numeric(stopy_zwrotu[, spolka]),
+        poziom,
+        h
+      )
+    }
+  },
+  wyniki_var_10$Spolka,
+  wyniki_var_10$Poziom,
+  wyniki_var_10$Metoda
+)
+
+stopifnot(all(is.finite(wyniki_var_10$VaR)))
+
+wyniki_var_10$Poziom <- paste0(
+  wyniki_var_10$Poziom * 100, "%"
+)
+
+wyniki_var_10$VaR <- round(
+  wyniki_var_10$VaR, 3
+)
+
+knitr::kable(
+  wyniki_var_10,
+  col.names = c(
+    "Spółka",
+    "Poziom ufności",
+    "Metoda",
+    "10-sesyjny VaR (%)"
+  ),
+  row.names = FALSE,
+  caption = "Value at Risk dla horyzontu 10 sesji"
+)
+```
+
+Wydłużenie horyzontu inwestycyjnego z jednej do 10 sesji wiązało się ze wzrostem oszacowanego VaR dla obu spółek. Najwyższe ryzyko odnotowano dla CI Games, dla którego historyczny VaR przy poziomie ufności 99% wyniósł 28,335%, wobec 17,459% dla CD Projekt. Metoda parametryczna dała w tych przypadkach niższe oszacowania, odpowiednio 24,638% i 16,039%. Wyniki wskazują, że wydłużenie okresu utrzymywania akcji zwiększa skalę potencjalnych strat, a przy wysokim poziomie ufności metoda parametryczna może nie uwzględniać w pełni ryzyka skrajnych zmian cen.
+
+
+
+# 7. Expected Shortfall (ES)
+
+## 7.1. Jednodniowy Expected Shortfall – metoda historyczna
+
+Expected Shortfall (ES) jest miarą ryzyka określającą oczekiwaną wielkość straty w najgorszej części rozkładu stóp zwrotu. W przeciwieństwie do Value at Risk uwzględnia nie tylko próg straty, lecz również wielkość strat występujących poza tym progiem.
+
+W analizie wyznaczono jednodniowy historyczny ES dla poziomów ufności 95% i 99%, wykorzystując empiryczny rozkład prostych stóp zwrotu.
+
+ES zdefiniowano jako średnią wartość strat w najgorszym udziale $1-c$ rozkładu stóp zwrotu:
+
+$$
+ES_c=-\frac{1}{1-c}\int_0^{1-c}Q_u(R)\,du
+$$
+
+gdzie $Q_u(R)$ oznacza kwantyl rozkładu stóp zwrotu na poziomie $u$, natomiast $c$ oznacza przyjęty poziom ufności.
+
+W obliczeniach zastosowano historyczny estymator ES oparty na średniej najniższych stóp zwrotu, z uwzględnieniem częściowej obserwacji na granicy ogona rozkładu.
+
+
+
+```{r es-historyczny, echo=FALSE}
+poziomy_ES <- c(0.95, 0.99)
+
+licz_ES <- function(x, poziom) {
+  x <- sort(as.numeric(na.omit(x)))
+
+  n <- length(x)
+  liczba_ogona <- (1 - poziom) * n
+
+  pelne <- floor(liczba_ogona)
+  czesc <- liczba_ogona - pelne
+
+  suma_strat <- if (pelne > 0) {
+    sum(x[seq_len(pelne)])
+  } else {
+    0
+  }
+
+  if (czesc > 0) {
+    suma_strat <- suma_strat +
+      czesc * x[pelne + 1]
+  }
+
+  -suma_strat / liczba_ogona * 100
+}
+
+
+wyniki_ES <- expand.grid(
+  Spolka = colnames(stopy_zwrotu),
+  Poziom = poziomy_ES,
+  stringsAsFactors = FALSE
+)
+
+
+wyniki_ES$ES <- mapply(
+  function(spolka, poziom) {
+    licz_ES(
+      stopy_zwrotu[, spolka],
+      poziom
+    )
+  },
+  wyniki_ES$Spolka,
+  wyniki_ES$Poziom
+)
+
+stopifnot(
+  all(is.finite(wyniki_ES$ES))
+)
+
+wyniki_ES$Poziom <- paste0(
+  wyniki_ES$Poziom * 100, "%"
+)
+
+wyniki_ES$ES <- round(wyniki_ES$ES, 3)
+
+knitr::kable(
+  wyniki_ES,
+  col.names = c(
+    "Spółka",
+    "Poziom ufności",
+    "Jednodniowy ES (%)"
+  ),
+  row.names = FALSE,
+  caption = "Historyczny jednodniowy Expected Shortfall"
+)
+```
+
+
+Historyczny jednodniowy Expected Shortfall dla CI Games wyniósł 7,397% przy poziomie ufności 95% oraz 14,223% przy poziomie 99%. Dla CD Projekt wartości te były niższe i wyniosły odpowiednio 5,005% oraz 7,836%. Szczególnie duża różnica występuje przy poziomie 99%, gdzie przeciętna strata w 1% najgorszych przypadków jest w CI Games niemal dwukrotnie wyższa niż w CD Projekt. 
+
+
+
+## 7.2. Porównanie Value at Risk i Expected Shortfall
+
+W celu porównania ryzyka skrajnych strat zestawiono jednodniowe wartości historycznego VaR i ES.
+
+
+
+```{r porownanie-var-es, echo=FALSE, fig.width=9, fig.height=5.5, warning=FALSE, message=FALSE}
+# Polaczenie wynikow VaR i ES
+dane_VaR <- wyniki_VaR
+dane_VaR$Miara <- "VaR"
+
+dane_ES <- wyniki_ES
+names(dane_ES)[names(dane_ES) == "ES"] <- "VaR"
+dane_ES$Miara <- "ES"
+
+dane_porownanie <- rbind(dane_VaR, dane_ES)
+
+# Kolejnosc miar i poziomow ufnosci
+dane_porownanie$Miara <- factor(
+  dane_porownanie$Miara,
+  levels = c("VaR", "ES")
+)
+
+dane_porownanie$Poziom <- factor(
+  dane_porownanie$Poziom,
+  levels = c("95%", "99%")
+)
+
+# Wykres
+ggplot(
+  dane_porownanie,
+  aes(x = Poziom, y = VaR, fill = Miara)
+) +
+  geom_col(
+    position = position_dodge(width = 0.7),
+    width = 0.6
+  ) +
+  geom_text(
+    aes(label = sprintf("%.2f%%", VaR)),
+    position = position_dodge(width = 0.7),
+    vjust = -0.4,
+    size = 3.5
+  ) +
+  facet_wrap(~Spolka, nrow = 1) +
+  scale_fill_manual(
+    values = c(
+      "VaR" = "#0072B2",
+      "ES" = "#D55E00"
+    )
+  ) +
+  scale_y_continuous(
+    labels = function(x) paste0(x, "%"),
+    expand = expansion(mult = c(0, 0.15))
+  ) +
+  labs(
+    title = "Porównanie VaR i Expected Shortfall",
+    subtitle = "Historyczne miary ryzyka dla horyzontu jednej sesji",
+    x = "Poziom ufności",
+    y = "Strata (%)",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_blank(),
+    strip.text = element_text(face = "bold"),
+    legend.position = "top",
+    plot.title = element_text(face = "bold")
+  )
+```
+
+
+
+
+## 7.3. Ryzyko skrajnych strat w portfelach inwestycyjnych
+
+W celu oceny wpływu dywersyfikacji na ryzyko skrajnych strat porównano historyczne wartości VaR i ES dla pojedynczych akcji oraz dwóch portfeli: o równych udziałach i minimalnej wariancji.
+
+Dzienne stopy zwrotu portfeli obliczono jako średnie ważone stóp zwrotu CI Games i CD Projekt:
+
+$$
+R_{p,t}=w_1R_{1,t}+w_2R_{2,t}
+$$
+
+gdzie $w_1$ i $w_2$ oznaczają udziały poszczególnych akcji.
+
+Dla obu portfeli zastosowano wagi ustalone na podstawie pełnego okresu badania. Następnie wyznaczono jednodniowe VaR i ES metodą historyczną przy poziomie ufności 95% i 99%. Porównanie ma charakter retrospektywny i nie stanowi oceny skuteczności strategii inwestycyjnej poza próbą.
+
+
+
+```{r var-es-portfele, echo=FALSE}
+
+R_50 <- 0.5 * stopy_zwrotu[, "CI Games"] +
+        0.5 * stopy_zwrotu[, "CD Projekt"]
+
+R_min <- w_CIG * stopy_zwrotu[, "CI Games"] +
+         w_CDR * stopy_zwrotu[, "CD Projekt"]
+
+stopy_inwestycji <- merge(
+  stopy_zwrotu,
+  R_50,
+  R_min
+)
+
+colnames(stopy_inwestycji) <- c(
+  "CI Games",
+  "CD Projekt",
+  "Portfel 50/50",
+  "Portfel min. wariancji"
+)
+
+stopifnot(
+  !anyNA(stopy_inwestycji),
+  all(is.finite(as.matrix(stopy_inwestycji)))
+)
+
+wyniki_portfele_ES <- expand.grid(
+  Inwestycja = colnames(stopy_inwestycji),
+  Poziom = c(0.95, 0.99),
+  stringsAsFactors = FALSE
+)
+
+
+wyniki_portfele_ES$VaR <- mapply(
+  function(nazwa, poziom) {
+    -as.numeric(quantile(
+      stopy_inwestycji[, nazwa],
+      probs = 1 - poziom,
+      type = 7
+    )) * 100
+  },
+  wyniki_portfele_ES$Inwestycja,
+  wyniki_portfele_ES$Poziom
+)
+
+
+wyniki_portfele_ES$ES <- mapply(
+  function(nazwa, poziom) {
+    licz_ES(
+      stopy_inwestycji[, nazwa],
+      poziom
+    )
+  },
+  wyniki_portfele_ES$Inwestycja,
+  wyniki_portfele_ES$Poziom
+)
+
+
+stopifnot(
+  all(is.finite(wyniki_portfele_ES$VaR)),
+  all(is.finite(wyniki_portfele_ES$ES)),
+  all(wyniki_portfele_ES$ES >=
+        wyniki_portfele_ES$VaR - 1e-10)
+)
+
+wyniki_portfele_ES$Poziom <- paste0(
+  wyniki_portfele_ES$Poziom * 100, "%"
+)
+
+wyniki_portfele_ES$VaR <- round(
+  wyniki_portfele_ES$VaR, 3
+)
+
+wyniki_portfele_ES$ES <- round(
+  wyniki_portfele_ES$ES, 3
+)
+
+knitr::kable(
+  wyniki_portfele_ES,
+  col.names = c(
+    "Inwestycja",
+    "Poziom ufności",
+    "VaR (%)",
+    "ES (%)"
+  ),
+  row.names = FALSE,
+  caption = "Historyczne VaR i ES dla akcji oraz portfeli"
+)
+```
+
+Uzyskane wyniki wskazują, że dywersyfikacja pozwoliła ograniczyć ryzyko skrajnych strat w porównaniu z inwestycją w pojedyncze spółki. Przy poziomie ufności 95% portfel minimalnej wariancji osiągnął najniższe wartości VaR (3,026%) i ES (4,600%). Przy poziomie 99% sytuacja była bardziej zróżnicowana: portfel 50/50 charakteryzował się niższym VaR (4,998% wobec 5,612%), natomiast portfel minimalnej wariancji niższym ES (6,968% wobec 8,210%). Oznacza to, że portfel minimalizujący wariancję nie musi jednocześnie minimalizować wszystkich miar ryzyka, a ocena korzyści z dywersyfikacji zależy od zastosowanej miary.
+
