@@ -466,56 +466,43 @@ Portfel składający się w równych proporcjach z akcji CI Games i CD Projekt o
 
 ## 3.4. Portfel o minimalnej wariancji
 
-W celu wyznaczenia optymalnej struktury portfela przeanalizowano różne udziały akcji CI Games i CD Projekt, przy założeniu braku krótkiej sprzedaży.
-
-Poszukiwano portfela o minimalnej wariancji stopy zwrotu, przy ograniczeniach:
+W celu wyznaczenia struktury portfela o najniższym poziomie ryzyka przeanalizowano możliwe udziały akcji obu spółek przy założeniu braku krótkiej sprzedaży:
 
 $$
-w_1+w_2=1, \qquad w_1,w_2 \geq 0
+w_1 + w_2 = 1, \qquad w_1, w_2 \in [0, 1]
 $$
 
-Dla portfela dwuskładnikowego udział pierwszej akcji minimalizujący wariancję wyznaczono ze wzoru:
+Dla portfela dwuskładnikowego odchylenie standardowe stopy zwrotu dane jest wzorem:
 
 $$
-w_1^*=
-\frac{\sigma_2^2-\operatorname{Cov}(R_1,R_2)}
-{\sigma_1^2+\sigma_2^2-2\operatorname{Cov}(R_1,R_2)}
+\sigma_p = \sqrt{w_1^2\sigma_1^2 + (1-w_1)^2\sigma_2^2 + 2w_1(1-w_1)\operatorname{Cov}(R_1, R_2)}
 $$
 
-Przyjęto $w_2^*=1-w_1^*$, uwzględniając ograniczenia dotyczące udziałów obu akcji.
-
+Wagę minimalizującą ryzyko wyznaczono numerycznie, obliczając odchylenie standardowe dla dyskretnej siatki wag udziału CI Games ($w_1 \in [0, 1]$ z krokiem $0{,}001$), a następnie znajdując indeks wartości minimalnej za pomocą funkcji `which.min()`.
 
 ```{r portfel-minimalny, echo=FALSE}
+# Siatka wag dla CI Games
+w1 <- seq(0, 1, by = 0.001)
 
+# Macierz kowariancji i średnie
 Sigma <- cov(stopy_zwrotu)
+sr_stopy <- colMeans(stopy_zwrotu)
 
+# Odchylenie standardowe dla każdego portfela na siatce
+sd_siatka <- sapply(w1, function(w) {
+  udzialy <- c(w, 1 - w)
+  sqrt(as.numeric(t(udzialy) %*% Sigma %*% udzialy))
+})
 
-w_CIG <- (
-  Sigma[2, 2] - Sigma[1, 2]
-) / (
-  Sigma[1, 1] + Sigma[2, 2] - 2 * Sigma[1, 2]
-)
+# Wyznaczenie wagi minimalizującej ryzyko
+idx_min <- which.min(sd_siatka)
 
-
-w_CIG <- max(0, min(1, w_CIG))
+w_CIG <- w1[idx_min]
 w_CDR <- 1 - w_CIG
-
 w_min <- c(w_CIG, w_CDR)
 
-sr_min <- sum(
-  w_min * colMeans(stopy_zwrotu)
-)
-
-sd_min <- sqrt(
-  as.numeric(t(w_min) %*% Sigma %*% w_min)
-)
-
-stopifnot(
-  all(w_min >= 0),
-  all(w_min <= 1),
-  isTRUE(all.equal(sum(w_min), 1))
-)
-
+sd_min <- sd_siatka[idx_min]
+sr_min <- sum(w_min * sr_stopy)
 
 wyniki_min <- data.frame(
   Miara = c(
@@ -540,47 +527,20 @@ knitr::kable(
 
 
 ```{r wykres-portfela, echo=FALSE, warning=FALSE, message=FALSE, fig.width=9, fig.height=5.5}
-# Rozne udzialy CI Games
-w <- seq(0, 1, by = 0.001)
-
-# Ryzyko portfela
-ryzyko <- sapply(w, function(x) {
-  udzialy <- c(x, 1 - x)
-  sqrt(as.numeric(
-    t(udzialy) %*% Sigma %*% udzialy
-  )) * 100
-})
-
 dane_portfel <- data.frame(
-  Udzial_CIG = w * 100,
-  Ryzyko = ryzyko
+  Udzial_CIG = w1 * 100,
+  Ryzyko = sd_siatka * 100
 )
 
-ggplot(dane_portfel,
-       aes(x = Udzial_CIG, y = Ryzyko)) +
-
-  geom_line(
-    color = "#0072B2",
-    linewidth = 1
-  ) +
-
+ggplot(dane_portfel, aes(x = Udzial_CIG, y = Ryzyko)) +
+  geom_line(color = "#0072B2", linewidth = 1) +
   # Portfel o minimalnej wariancji
-  annotate(
-    "point",
-    x = w_CIG * 100,
-    y = sd_min * 100,
-    color = "#009E73",
-    size = 3.5
-  ) +
-
+  annotate("point", x = w_CIG * 100, y = sd_min * 100, color = "#009E73", size = 3.5) +
   annotate(
     "label",
     x = w_CIG * 100,
     y = sd_min * 100,
-    label = paste0(
-      "Minimum: ",
-      round(sd_min * 100, 2), "%"
-    ),
+    label = paste0("Minimum: ", round(sd_min * 100, 2), "%"),
     hjust = 0.5,
     vjust = -1.5,
     fill = "white",
@@ -588,24 +548,13 @@ ggplot(dane_portfel,
     color = "#007F5F",
     size = 3.7
   ) +
-
   # Portfel 50/50
-  annotate(
-    "point",
-    x = 50,
-    y = sd_portfel * 100,
-    color = "#D55E00",
-    size = 3.5
-  ) +
-
+  annotate("point", x = 50, y = sd_portfel * 100, color = "#D55E00", size = 3.5) +
   annotate(
     "label",
     x = 50,
     y = sd_portfel * 100,
-    label = paste0(
-      "50/50: ",
-      round(sd_portfel * 100, 2), "%"
-    ),
+    label = paste0("50/50: ", round(sd_portfel * 100, 2), "%"),
     hjust = -0.12,
     vjust = -0.7,
     fill = "white",
@@ -613,42 +562,181 @@ ggplot(dane_portfel,
     color = "#B34B00",
     size = 3.7
   ) +
-
-  scale_x_continuous(
-    breaks = seq(0, 100, 20),
-    expand = expansion(mult = c(0.02, 0.04))
-  ) +
-
-  scale_y_continuous(
-    breaks = seq(2, 3.5, by = 0.25),
-    expand = expansion(mult = c(0.12, 0.08))
-  ) +
-
+  scale_x_continuous(breaks = seq(0, 100, 20)) +
+  scale_y_continuous(breaks = seq(2, 3.5, by = 0.25)) +
   labs(
     title = "Ryzyko portfela a udział CI Games",
     subtitle = "Portfel dwuskładnikowy, 2023–2026",
     x = "Udział CI Games w portfelu (%)",
-    y = "Dzienne odchylenie standardowe (%)",
-    
+    y = "Dzienne odchylenie standardowe (%)"
   ) +
-
-  coord_cartesian(clip = "off") +
-
   theme_minimal(base_size = 12) +
-
   theme(
     panel.grid.minor = element_blank(),
     panel.grid.major.x = element_blank(),
-    plot.title = element_text(face = "bold", size = 14),
-    plot.subtitle = element_text(color = "grey40"),
-    plot.caption = element_text(color = "grey50"),
-    plot.margin = margin(15, 25, 15, 15)
+    plot.title = element_text(face = "bold")
   )
 ```
 
-Portfel o minimalnej wariancji składa się w 27,59% z akcji CI Games i w 72,41% z akcji CD Projekt. Jego dzienne odchylenie standardowe wynosi 2,071%, wobec 2,237% dla portfela 50/50. Oznacza to, że odpowiedni dobór udziałów pozwala dodatkowo ograniczyć ryzyko inwestycyjne. Uzyskana średnia dzienna stopa zwrotu wynosi 0,089%, co wskazuje na korzystniejszą relację stopy zwrotu do ryzyka niż w przypadku portfela o równych udziałach.
+Portfel o minimalnej wariancji składa się w 27,59% z akcji CI Games i w 72,4% z akcji CD Projekt. Jego dzienne odchylenie standardowe wynosi 2,071%, wobec 2,237% dla portfela 50/50. Oznacza to, że odpowiedni dobór udziałów pozwala dodatkowo ograniczyć ryzyko inwestycyjne. Uzyskana średnia dzienna stopa zwrotu wynosi 0,089%, co wskazuje na korzystniejszą relację stopy zwrotu do ryzyka niż w przypadku portfela o równych udziałach.
+
+# 4. Model wyceny aktywów kapitałowych (CAPM)
+
+## 4.1. Założenia modelu i dekompozycja ryzyka
+
+W modelu CAPM (*Capital Asset Pricing Model*) wrażliwość stopy zwrotu akcji na zmiany szerokiego rynku (reprezentowanego przez indeks WIG) określa współczynnik beta:
+
+$$
+\beta_i = \frac{\operatorname{Cov}(R_i, R_M)}{\sigma_M^2}
+$$
+
+Model pozwala na dekompozycję całkowitej wariancji stóp zwrotu na ryzyko systematyczne (rynkowe) oraz ryzyko specyficzne (idiosynkratyczne):
+
+$$
+\sigma_i^2 = \beta_i^2 \sigma_M^2 + \sigma_{\epsilon_i}^2
+$$
+
+gdzie $|\beta_i|\sigma_M$ oznacza ryzyko systematyczne, a $\sigma_{\epsilon_i} = \sqrt{\sigma_i^2 - \beta_i^2\sigma_M^2}$ ryzyko specyficzne. 
+
+Efektywność inwestycji w ujęciu ex-post oceniono za pomocą wskaźników Sharpe'a, Treynora oraz alfy Jensena, przyjmując stopę wolną od ryzyka $r_f = 5{,}75\%$ rocznie.
+
+## 4.2. Oszacowanie parametrów CAPM
+
+```{r obiczenia, include=FALSE}
+# Wczytanie pliku z WIG z folderu projektu
+wig_raw <- read.csv("wig_d.csv")
+wig_raw$Data <- as.Date(wig_raw$Data)
+
+# Przekształcenie na szereg czasowy i dopasowanie do dat spółek
+wig_xts <- xts(wig_raw$Zamkniecie, order.by = wig_raw$Data)
+ceny_WIG <- wig_xts[index(ceny)]
+
+# Dzienna stopa zwrotu indeksu WIG
+stopy_WIG <- Delt(ceny_WIG, type = "arithmetic")
+
+# Połączenie stóp i nadanie nazw kolumn
+dane_capm <- na.omit(merge(stopy_zwrotu, stopy_WIG))
+colnames(dane_capm) <- c("CI Games", "CD Projekt", "WIG")
+
+# Stopa wolna od ryzyka (5.75% rocznie)
+rf_roczna <- 0.0575
+rf_dzienna <- (1 + rf_roczna)^(1/252) - 1
+
+# 1. Rynek (WIG)
+R_M <- dane_capm[, 3]
+sr_M <- mean(R_M)
+var_M <- var(R_M)
+sd_M <- sd(R_M)
+
+# 2. CI Games
+R_CIG <- dane_capm[, 1]
+sr_CIG <- mean(R_CIG)
+var_CIG <- var(R_CIG)
+sd_CIG <- sd(R_CIG)
+
+cov_CIG_M <- cov(R_CIG, R_M)[1, 1]
+beta_CIG <- cov_CIG_M / var_M
+
+sd_sys_CIG <- abs(beta_CIG) * sd_M
+war_spec_CIG <- max(0, var_CIG - beta_CIG^2 * var_M)
+sd_spec_CIG <- sqrt(war_spec_CIG)
+udzial_spec_CIG <- (war_spec_CIG / var_CIG) * 100
+
+sharpe_CIG <- (sr_CIG - rf_dzienna) / sd_CIG * sqrt(252)
+treynor_CIG <- (sr_CIG - rf_dzienna) / beta_CIG * 252
+alfa_CIG <- (sr_CIG - (rf_dzienna + beta_CIG * (sr_M - rf_dzienna))) * 252 * 100
+
+# 3. CD Projekt
+R_CDR <- dane_capm[, 2]
+sr_CDR <- mean(R_CDR)
+var_CDR <- var(R_CDR)
+sd_CDR <- sd(R_CDR)
+
+cov_CDR_M <- cov(R_CDR, R_M)[1, 1]
+beta_CDR <- cov_CDR_M / var_M
+
+sd_sys_CDR <- abs(beta_CDR) * sd_M
+war_spec_CDR <- max(0, var_CDR - beta_CDR^2 * var_M)
+sd_spec_CDR <- sqrt(war_spec_CDR)
+udzial_spec_CDR <- (war_spec_CDR / var_CDR) * 100
+
+sharpe_CDR <- (sr_CDR - rf_dzienna) / sd_CDR * sqrt(252)
+treynor_CDR <- (sr_CDR - rf_dzienna) / beta_CDR * 252
+alfa_CDR <- (sr_CDR - (rf_dzienna + beta_CDR * (sr_M - rf_dzienna))) * 252 * 100
+
+# Przygotowanie tabeli
+tabela_capm <- data.frame(
+  Spolka = c("CI Games", "CD Projekt"),
+  Beta = round(c(beta_CIG, beta_CDR), 3),
+  Sigma_sys = round(c(sd_sys_CIG, sd_sys_CDR) * 100, 3),
+  Sigma_spec = round(c(sd_spec_CIG, sd_spec_CDR) * 100, 3),
+  Udzial_spec = round(c(udzial_spec_CIG, udzial_spec_CDR), 1),
+  Sharpe = round(c(sharpe_CIG, sharpe_CDR), 3),
+  Treynor = round(c(treynor_CIG, treynor_CDR), 3),
+  Alfa = round(c(alfa_CIG, alfa_CDR), 2)
+)
+```
+
+```{r capm-tabela, echo=FALSE}
+knitr::kable(
+  tabela_capm,
+  col.names = c(
+    "Spółka",
+    "Współczynnik Beta",
+    "Ryzyko sys. (%)",
+    "Ryzyko spec. (%)",
+    "Udział spec. (%)",
+    "Wskaźnik Sharpe'a",
+    "Wskaźnik Treynora",
+    "Alfa Jensena (%)"
+  ),
+  caption = "Oszacowane parametry modelu CAPM i miary efektywności",
+  row.names = FALSE
+)
+```
 
 
+```{r wykres-sml, echo=FALSE, fig.width=9, fig.height=5}
+b_max <- max(beta_CIG, beta_CDR, 1) * 1.2
+siatka_b <- seq(0, b_max, length.out = 100)
+sml_linia <- data.frame(
+  Beta = siatka_b,
+  Zwrot = (rf_dzienna + siatka_b * (sr_M - rf_dzienna)) * 252 * 100
+)
+
+punkty_wykres <- data.frame(
+  Spolka = c("CI Games", "CD Projekt", "WIG", "rf"),
+  Beta = c(beta_CIG, beta_CDR, 1, 0),
+  Zwrot = c(sr_CIG * 252 * 100, sr_CDR * 252 * 100, sr_M * 252 * 100, rf_roczna * 100)
+)
+
+ggplot() +
+  geom_line(data = sml_linia, aes(x = Beta, y = Zwrot), color = "grey40", linewidth = 0.8) +
+  geom_point(data = punkty_wykres, aes(x = Beta, y = Zwrot, color = Spolka), size = 3) +
+  geom_text(data = punkty_wykres, aes(x = Beta, y = Zwrot, label = Spolka), vjust = -1, size = 3.5) +
+  scale_color_manual(values = c(
+    "CI Games" = "#0072B2",
+    "CD Projekt" = "#D55E00",
+    "WIG" = "#009E73",
+    "rf" = "black"
+  )) +
+  labs(
+    title = "Linia rynku papierów wartościowych (SML)",
+    subtitle = "Położenie akcji względem linii wyceny rynku",
+    x = "Współczynnik Beta",
+    y = "Roczna stopa zwrotu (%)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+Współczynnik beta wyniósł 0,619 dla CI Games oraz 0,830 dla CD Projekt, co wskazuje na niższą wrażliwość notowań obu spółek na zmiany indeksu WIG w porównaniu z całym rynkiem. Dekompozycja ryzyka wykazała wyraźną dominację ryzyka specyficznego, które stanowi aż 95,9% całkowitej wariancji dla CI Games oraz 83,7% dla CD Projekt. Oznacza to, że wahania cen akcji w badanym okresie wynikały w przeważającej mierze ze zdarzeń wewnątrz spółek (premier gier), a nie z koniunktury na szerokim rynku.
+
+CD Projekt osiągnął wyższe wartości miar efektywności: wskaźnik Sharpe'a wyniósł 0,539, wskaźnik Treynora 0,239, a roczna alfa Jensena 0,70%, co odpowiada położeniu spółki blisko Linii Rynku Papierów Wartościowych (SML). Dla CI Games wskaźniki te były znacznie niższe (Sharpe 0,158, Treynor 0,139 oraz ujemna alfa Jensena -5,66%). Położenie CI Games wyraźnie poniżej linii SML oznacza, że ze względu na załamanie notowań jesienią 2023 r. zrealizowana stopa zwrotu nie rekompensowała ponoszonego ryzyka rynkowego.
 
 
 # 5. Zmienność w modelu Blacka–Scholesa
@@ -1384,3 +1472,226 @@ knitr::kable(
 
 Uzyskane wyniki wskazują, że dywersyfikacja pozwoliła ograniczyć ryzyko skrajnych strat w porównaniu z inwestycją w pojedyncze spółki. Przy poziomie ufności 95% portfel minimalnej wariancji osiągnął najniższe wartości VaR (3,026%) i ES (4,600%). Przy poziomie 99% sytuacja była bardziej zróżnicowana: portfel 50/50 charakteryzował się niższym VaR (4,998% wobec 5,612%), natomiast portfel minimalnej wariancji niższym ES (6,968% wobec 8,210%). Oznacza to, że portfel minimalizujący wariancję nie musi jednocześnie minimalizować wszystkich miar ryzyka, a ocena korzyści z dywersyfikacji zależy od zastosowanej miary.
 
+
+# 8. Dodatkowe miary ryzyka
+
+## 8.1. Maksymalne obsunięcie kapitału (Maximum Drawdown)
+
+Maksymalne obsunięcie kapitału (*Maximum Drawdown*, MDD) określa największy procentowy spadek wartości inwestycji od lokalnego szczytu do kolejnego dołka w danym okresie:
+
+$$
+MDD = \min_{t \in [0, T]} \left( \frac{V_t - \max_{s \le t} V_s}{\max_{s \le t} V_s} \right)
+$$
+
+Wskaźnik ten informuje o największej historycznej stracie, jaką poniósłby inwestor kupujący walor w najmniej korzystnym momencie (na lokalnym szczycie). MDD wyznaczono dla pojedynczych spółek oraz dla obu analizowanych portfeli.
+
+```{r mdd-obliczenia, include=FALSE}
+# Szeregi skumulowanej wartości (baza 100) dla spółek i portfeli
+skum_CIG <- cumprod(1 + stopy_zwrotu[, "CI Games"])
+skum_CDR <- cumprod(1 + stopy_zwrotu[, "CD Projekt"])
+skum_50 <- cumprod(1 + R_50)
+skum_min <- cumprod(1 + R_min)
+
+# Funkcja licząca bieżące obsunięcie (drawdown)
+licz_drawdown <- function(wartosci) {
+  szczyty <- cummax(wartosci)
+  (wartosci - szczyty) / szczyty
+}
+
+dd_CIG <- licz_drawdown(as.numeric(skum_CIG))
+dd_CDR <- licz_drawdown(as.numeric(skum_CDR))
+dd_50 <- licz_drawdown(as.numeric(skum_50))
+dd_min <- licz_drawdown(as.numeric(skum_min))
+
+# Maksymalne obsunięcia (wartości minimalne)
+mdd_CIG <- min(dd_CIG) * 100
+mdd_CDR <- min(dd_CDR) * 100
+mdd_50 <- min(dd_50) * 100
+mdd_min <- min(dd_min) * 100
+
+tabela_mdd <- data.frame(
+  Inwestycja = c("CI Games", "CD Projekt", "Portfel 50/50", "Portfel min. wariancji"),
+  MDD = round(c(mdd_CIG, mdd_CDR, mdd_50, mdd_min), 2)
+)
+```
+
+```{r mdd-tabela, echo=FALSE}
+knitr::kable(
+  tabela_mdd,
+  col.names = c("Inwestycja", "Maximum Drawdown (%)"),
+  caption = "Maksymalne obsunięcie kapitału w okresie 2023–2026",
+  row.names = FALSE
+)
+```
+
+```{r mdd-wykres, echo=FALSE, fig.width=10, fig.height=5}
+# Przygotowanie danych do wykresu obsunięć w czasie
+dane_dd <- data.frame(
+  Data = rep(as.Date(index(stopy_zwrotu)), 4),
+  Obsuniecie = c(dd_CIG, dd_CDR, dd_50, dd_min) * 100,
+  Inwestycja = factor(
+    rep(c("CI Games", "CD Projekt", "Portfel 50/50", "Portfel min. wariancji"), each = nrow(stopy_zwrotu)),
+    levels = c("CI Games", "CD Projekt", "Portfel 50/50", "Portfel min. wariancji")
+  )
+)
+
+ggplot(dane_dd, aes(x = Data, y = Obsuniecie, color = Inwestycja)) +
+  geom_line(linewidth = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "grey50") +
+  scale_color_manual(values = c(
+    "CI Games" = "#0072B2",
+    "CD Projekt" = "#D55E00",
+    "Portfel 50/50" = "#CC79A7",
+    "Portfel min. wariancji" = "#009E73"
+  )) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  labs(
+    title = "Obsunięcie kapitału w czasie (Drawdown)",
+    subtitle = "Spadek wartości względem dotychczasowego maksimum",
+    x = "Data",
+    y = "Obsunięcie (%)",
+    color = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "top",
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+W analizowanym okresie notowania obu spółek doświadczyły wyraźnych spadków po kluczowych premierach jesienią 2023 r., jednak ich późniejszy przebieg był diametralnie różny. Akcje CI Games osiągnęły Maximum Drawdown na poziomie -82,75%. Problemy techniczne i słabsza od oczekiwań sprzedaż gry Lords of the Fallen doprowadziły do trwałego załamania kursu – spółka do końca badanego okresu nie odrobiła strat, utrzymując się na poziomie od 60% do 80% poniżej szczytu z 2023 roku.
+
+W przypadku CD Projekt maksymalne obsunięcie wyniosło -41,65% i miało charakter przejściowy. Przecena po premierze dodatku Phantom Liberty wynikała głównie z realizacji zysków przez inwestorów po wcześniejszych wzrostach. Pozytywne recenzje oraz długofalowa sprzedaż pozwoliły spółce w latach 2024–2025 całkowicie odrobić ten spadek i wyznaczyć nowe szczyty notowań, co na wykresie obrazują powroty linii do poziomu 0%.
+
+Dywersyfikacja pozwoliła wyraźnie ograniczyć skalę obsunięcia kapitału w porównaniu z samodzielnym utrzymywaniem akcji CI Games. W portfelu o równych udziałach MDD wyniosło -59,71%, natomiast w portfelu minimalnej wariancji -50,48%. Wysoki udział CD Projekt w portfelu minimalnej wariancji sprawił, że portfel znacznie łagodniej odczuł załamanie kursu CI Games i szybciej odzyskiwał wartość.
+
+
+## 8.2. Testowanie wsteczne Value at Risk (Backtesting)
+
+W celu weryfikacji trafności wyznaczania Value at Risk przeprowadzono testowanie wsteczne (*backtesting*) w kroczącym oknie o długości 252 sesji (jeden rok giełdowy). 
+
+Dla każdej sesji $t$ oszacowano jednodniowy VaR na poziomie ufności 95% na podstawie poprzednich 252 sesji, a następnie sprawdzono, czy zrealizowana strata $L_t = -R_t$ przekroczyła wyznaczony próg:
+
+$$
+I_t = \begin{cases} 1, & \text{gdy } L_t > VaR_{0{,}05, t} \\ 0, & \text{w przeciwnym wypadku} \end{cases}
+$$
+
+Badanie przeprowadzono dla metody historycznej oraz parametrycznej. Poprawnie skalibrowany model powinien generować przekroczenia na poziomie zbliżonym do teoretycznych 5% sesji testowych.
+
+```{r backtest-obliczenia, include=FALSE}
+okno <- 252
+poziom <- 0.05
+n_sesji <- nrow(stopy_zwrotu)
+dni_test <- (okno + 1):n_sesji
+liczba_dni_test <- length(dni_test)
+
+spolki_bt <- c("CI Games", "CD Projekt")
+wyniki_bt_lista <- list()
+wykres_bt_lista <- list()
+
+for (sp in spolki_bt) {
+  r_wektor <- as.numeric(stopy_zwrotu[, sp])
+  straty_real <- -r_wektor[dni_test]
+  
+  var_h <- numeric(liczba_dni_test)
+  var_p <- numeric(liczba_dni_test)
+  
+  for (i in seq_along(dni_test)) {
+    idx <- dni_test[i]
+    probka <- r_wektor[(idx - okno):(idx - 1)]
+    
+    var_h[i] <- -as.numeric(quantile(probka, probs = poziom, type = 7))
+    var_p[i] <- -(mean(probka) + qnorm(poziom) * sd(probka))
+  }
+  
+  k_h <- sum(straty_real > var_h)
+  k_p <- sum(straty_real > var_p)
+  
+  wyniki_bt_lista[[sp]] <- data.frame(
+    Spolka = sp,
+    Metoda = c("Historyczna", "Parametryczna"),
+    Sesje = liczba_dni_test,
+    Oczekiwane = round(liczba_dni_test * poziom, 1),
+    Przekroczenia = c(k_h, k_p),
+    Udzial = round(c(k_h, k_p) / liczba_dni_test * 100, 2)
+  )
+  
+  wykres_bt_lista[[sp]] <- data.frame(
+    Data = as.Date(index(stopy_zwrotu)[dni_test]),
+    Strata = straty_real * 100,
+    VaR_Hist = var_h * 100,
+    VaR_Param = var_p * 100,
+    Przekroczenie_Hist = straty_real > var_h,
+    Spolka = sp
+  )
+}
+
+tabela_backtest <- do.call(rbind, wyniki_bt_lista)
+dane_wykres_bt <- do.call(rbind, wykres_bt_lista)
+```
+
+```{r backtest-tabela, echo=FALSE}
+knitr::kable(
+  tabela_backtest,
+  col.names = c(
+    "Spółka",
+    "Metoda VaR",
+    "Liczba sesji testowych",
+    "Oczekiwana liczba błędów",
+    "Rzeczywista liczba błędów",
+    "Wskaźnik przekroczeń (%)"
+  ),
+  caption = "Wyniki testowania wstecznego 1-dniowego VaR (poziom ufności 95%)",
+  row.names = FALSE
+)
+```
+
+```{r backtest-wykres, echo=FALSE, fig.width=10, fig.height=6}
+ggplot(dane_wykres_bt, aes(x = Data)) +
+  geom_line(aes(y = Strata), color = "grey75", linewidth = 0.4) +
+  geom_line(aes(y = VaR_Hist, color = "VaR historyczny"), linewidth = 0.8) +
+  geom_line(aes(y = VaR_Param, color = "VaR parametryczny"), linewidth = 0.8, linetype = "dashed") +
+  geom_point(
+    data = subset(dane_wykres_bt, Przekroczenie_Hist),
+    aes(y = Strata, fill = "Przekroczenie VaR hist."),
+    shape = 21,
+    size = 2,
+    color = "black"
+  ) +
+  facet_wrap(~Spolka, ncol = 1, scales = "free_y") +
+  scale_color_manual(values = c(
+    "VaR historyczny" = "#0072B2",
+    "VaR parametryczny" = "#D55E00"
+  )) +
+  scale_fill_manual(values = c("Przekroczenie VaR hist." = "firebrick")) +
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  labs(
+    title = "Testowanie wsteczne jednodniowego Value at Risk (poziom ufności 95%)",
+    subtitle = "Zrealizowane straty sesyjne na tle kroczących progów VaR",
+    x = "Data",
+    y = "Dzienna strata (%)",
+    color = "Model VaR:",
+    fill = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "top",
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(face = "bold")
+  )
+```
+
+W badaniu testowania wstecznego na próbie 684 sesji oczekiwana liczba przekroczeń progu 95% wynosiła 34,2 sesji (5%). Metoda historyczna wykazała wysoką trafność szacowania ryzyka – odnotowano 29 przekroczeń dla CI Games (wskaźnik 4,24%) oraz 32 przekroczenia dla CD Projekt (4,68%), co jest wartością bardzo bliską teoretycznemu założeniu.
+
+Metoda parametryczna generowała wyraźnie mniej błędów (2,49% dla CI Games i 3,07% dla CD Projekt), co wynika z faktu, że przy poziomie ufności 95% model oparty na rozkładzie normalnym dawał bardziej konserwatywne (wyższe) oszacowania progu straty niż metoda historyczna. Wykres wskazuje ponadto na zjawisko grupowania się przekroczeń w okresach podwyższonej zmienności, szczególnie jesienią 2023 r. w przypadku obu spółek.
+
+
+# 9. Podsumowanie i wnioski końcowe
+
+Przeprowadzona analiza pozwoliła jednoznacznie potwierdzić przyjętą hipotezę badawczą: przynależność spółek do tej samej branży nie przesądza o zbliżonym poziomie ani profilu ryzyka inwestycyjnego. Mimo że zarówno CI Games, jak i CD Projekt funkcjonują w sektorze gier komputerowych i w podobnym czasie wprowadzały na rynek kluczowe tytuły, odmienna skala ich działalności, rozpoznawalność posiadanych marek oraz zróżnicowanie źródeł przychodów przełożyły się na fundamentalnie różne zachowanie notowań.
+
+Główna różnica między spółkami ujawniła się w odporności na materializację ryzyka specyficznego, które w obu przypadkach dominowało nad wpływem szerokiego rynku. W przypadku CI Games model oparty na pojedynczych dużych produkcjach sprawił, że niepowodzenie premierowe doprowadziło do długotrwałego załamania wyceny oraz drastycznego wzrostu zagrożenia skrajnymi stratami, za które inwestorzy nie otrzymali adekwatnej premii. Z kolei CD Projekt, dysponujący silnymi markami o ugruntowanej pozycji globalnej, potraktował popremierową przecenę jedynie jako przejściową korektę, wykazując znacznie większą dojrzałość rynkową i zdolność do szybkiej odbudowy kapitału.
+
+Badanie dowiodło również, że dywersyfikacja portfelowa zachowuje wysoką skuteczność nawet przy łączeniu podmiotów z tego samego sektora gospodarki. Ze względu na niezależność cykli produkcyjnych i premierowych stopy zwrotu obu spółek cechowały się bardzo słabym powiązaniem, co umożliwiło stworzenie portfela o wskaźnikach zmienności niższych niż dla jakiejkolwiek pojedynczej spółki składowej. Odpowiednia alokacja pozwoliła wyeliminować znaczną część ryzyka specyficznego, skutecznie zabezpieczając inwestora przed dotkliwymi skutkami załamania kursu pojedynczego emitenta.
